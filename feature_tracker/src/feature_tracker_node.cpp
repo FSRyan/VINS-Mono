@@ -29,7 +29,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         first_image_time = img_msg->header.stamp.toSec();
     }
 
-    // frequency control
+    // frequency control  频率控制，保证每秒钟处理的image不多于FREQ；
     if (round(1.0 * pub_count / (img_msg->header.stamp.toSec() - first_image_time)) <= FREQ)
     {
         PUB_THIS_FRAME = true;
@@ -42,20 +42,29 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
     }
     else
         PUB_THIS_FRAME = false;
-
+    //转换为mat图像
     cv_bridge::CvImageConstPtr ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
     cv::Mat show_img = ptr->image;
     TicToc t_r;
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
         ROS_DEBUG("processing camera %d", i);
+        /*readImage内部函数：
+        1.图像太亮或太暗，使用限制对比度的直方图均衡
+        2.calcOpticalFlowPyrLK光流跟踪
+        3.利用基础矩阵去除外点
+        4.setMask()??是做什么的---鱼眼相机专用，remove edge noisy points
+        5.检测角点，凑够MAX_CNT个点进行追踪
+        6.根据是否发布该图片对prev_img\cur_img\forw_img的信息进行更新
+        */
         if (i != 1 || !STEREO_TRACK)
-            trackerData[i].readImage(ptr->image.rowRange(ROW * i, ROW * (i + 1)));
+            trackerData[i].readImage(ptr->image.rowRange(ROW * i, ROW * (i + 1)));//rowRange函数取的实际行数，只取到范围的右边界，而不取左边界,在此处指的是取第i张image
+
         else
         {
             if (EQUALIZE)
             {
-                cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE();
+                cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(); //限制对比度的自适应直方图均衡，提高图像对比度
                 clahe->apply(ptr->image.rowRange(ROW * i, ROW * (i + 1)), trackerData[i].cur_img);
             }
             else
@@ -66,7 +75,7 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         trackerData[i].showUndistortion("undistrotion_" + std::to_string(i));
 #endif
     }
-
+//这部分没看，STEREO_TRACK=false
     if ( PUB_THIS_FRAME && STEREO_TRACK && trackerData[0].cur_pts.size() > 0)
     {
         pub_count++;
@@ -113,13 +122,13 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
             }
         }
     }
-
+//更新相机跟踪点的ID
     for (unsigned int i = 0;; i++)
     {
         bool completed = false;
         for (int j = 0; j < NUM_OF_CAM; j++)
             if (j != 1 || !STEREO_TRACK)
-                completed |= trackerData[j].updateID(i);
+                completed |= trackerData[j].updateID(i);//更新ID
         if (!completed)
             break;
     }
@@ -134,7 +143,11 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
 
         feature_points->header = img_msg->header;
         feature_points->header.frame_id = "world";
-
+        //归一化坐标？
+       /*
+        * Pc=[X/Z,Y/Z,1]T,Pc经过内参之后就得到像素坐标
+        * Puv=K*Pc
+        */
         vector<set<int>> hash_ids(NUM_OF_CAM);
         for (int i = 0; i < NUM_OF_CAM; i++)
         {
@@ -153,12 +166,13 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
                     p.z = 1;
 
                     feature_points->points.push_back(p);
-                    id_of_point.values.push_back(p_id * NUM_OF_CAM + i);
+                    id_of_point.values.push_back(p_id * NUM_OF_CAM + i);//假设0-50存放左摄像头，那么右摄像头就是
                     u_of_point.values.push_back(cur_pts[j].x);
                     v_of_point.values.push_back(cur_pts[j].y);
                     ROS_ASSERT(inBorder(cur_pts[j]));
                 }
             }
+                //STEREO_TRACK=FALSE
             else if (STEREO_TRACK)
             {
                 auto r_un_pts = trackerData[1].undistortedPoints();
@@ -184,8 +198,9 @@ void img_callback(const sensor_msgs::ImageConstPtr &img_msg)
         feature_points->channels.push_back(u_of_point);
         feature_points->channels.push_back(v_of_point);
         ROS_DEBUG("publish %f, at %f", feature_points->header.stamp.toSec(), ros::Time::now().toSec());
-        pub_img.publish(feature_points);
-
+       //发布
+        pub_img.publish(feature_points);//feature_points中points中的点是归一化坐标平面中的点，channels中的信息是其图像中的像素点
+       //标记跟踪
         if (SHOW_TRACK)
         {
             ptr = cv_bridge::cvtColor(ptr, sensor_msgs::image_encodings::BGR8);
@@ -236,7 +251,7 @@ int main(int argc, char **argv)
     ros::NodeHandle n("~");
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
     readParameters(n);
-
+    //读入相机的参数
     for (int i = 0; i < NUM_OF_CAM; i++)
         trackerData[i].readIntrinsicParameter(CAM_NAMES[i]);
 
@@ -255,7 +270,7 @@ int main(int argc, char **argv)
         }
     }
 
-    ros::Subscriber sub_img = n.subscribe(IMAGE_TOPIC, 100, img_callback);
+    ros::Subscriber sub_img = n.subscribe(IMAGE_TOPIC, 100, img_callback); //监听IMAGE_TOPIC, 有图像信息发布到IMAGE_TOPIC上时，执行回调函数
 
     pub_img = n.advertise<sensor_msgs::PointCloud>("feature", 1000);
     pub_match = n.advertise<sensor_msgs::Image>("feature_img",1000);

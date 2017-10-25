@@ -70,6 +70,7 @@ CameraCalibration::calibrate(void)
     int imageCount = m_imagePoints.size();
 
     // compute intrinsic camera parameters and extrinsic parameters for each of the views
+    // 计算内参和外参
     std::vector<cv::Mat> rvecs;
     std::vector<cv::Mat> tvecs;
     bool ret = calibrateHelper(m_camera, rvecs, tvecs);

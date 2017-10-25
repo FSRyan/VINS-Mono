@@ -61,34 +61,34 @@ std_msgs::Header cur_header;
 Eigen::Vector3d relocalize_t{Eigen::Vector3d(0, 0, 0)};
 Eigen::Matrix3d relocalize_r{Eigen::Matrix3d::Identity()};
 
-
+//预积分部分，对应了论文公式（1），利用了Mid-point积分方法，但是论文中讲解的时候用的是Euler intergration
 void predict(const sensor_msgs::ImuConstPtr &imu_msg)
 {
     double t = imu_msg->header.stamp.toSec();
     double dt = t - latest_time;
     latest_time = t;
-
+    //加速度计参数
     double dx = imu_msg->linear_acceleration.x;
     double dy = imu_msg->linear_acceleration.y;
     double dz = imu_msg->linear_acceleration.z;
     Eigen::Vector3d linear_acceleration{dx, dy, dz};
-
+    //陀螺仪参数
     double rx = imu_msg->angular_velocity.x;
     double ry = imu_msg->angular_velocity.y;
     double rz = imu_msg->angular_velocity.z;
     Eigen::Vector3d angular_velocity{rx, ry, rz};
 
-    Eigen::Vector3d un_acc_0 = tmp_Q * (acc_0 - tmp_Ba - tmp_Q.inverse() * estimator.g);
+    Eigen::Vector3d un_acc_0 = tmp_Q * (acc_0 - tmp_Ba - tmp_Q.inverse() * estimator.g);//用四元数Q代替了旋转矩阵R
 
-    Eigen::Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - tmp_Bg;
-    tmp_Q = tmp_Q * Utility::deltaQ(un_gyr * dt);
+    Eigen::Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - tmp_Bg;//0.5*Ω（w-Bg）
+    tmp_Q = tmp_Q * Utility::deltaQ(un_gyr * dt);//四元数传播，不太懂deltaQ函数作用
 
     Eigen::Vector3d un_acc_1 = tmp_Q * (linear_acceleration - tmp_Ba - tmp_Q.inverse() * estimator.g);
 
     Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
 
-    tmp_P = tmp_P + dt * tmp_V + 0.5 * dt * dt * un_acc;
-    tmp_V = tmp_V + dt * un_acc;
+    tmp_P = tmp_P + dt * tmp_V + 0.5 * dt * dt * un_acc;//P=P0+vt+1/2at*t
+    tmp_V = tmp_V + dt * un_acc;//V=V0+at
 
     acc_0 = linear_acceleration;
     gyr_0 = angular_velocity;
@@ -122,13 +122,18 @@ getMeasurements()
         if (imu_buf.empty() || feature_buf.empty())
             return measurements;
 
+        // synchronize, if strictly synchronize, should change to ">="
+        // end up with : imu_buf.front()->header.stamp < feature_buf.front()->header.stamp
+
+        // 1. should have overlap(交叠)
+
         if (!(imu_buf.back()->header.stamp > feature_buf.front()->header.stamp))
         {
             ROS_WARN("wait for imu, only should happen at the beginning");
             sum_of_wait++;
             return measurements;
         }
-
+        // 2. should have complete imu measurements between two feature_buf msg
         if (!(imu_buf.front()->header.stamp < feature_buf.front()->header.stamp))
         {
             ROS_WARN("throw img, only should happen at the beginning");
@@ -159,14 +164,14 @@ void imu_callback(const sensor_msgs::ImuConstPtr &imu_msg)
 
     {
         std::lock_guard<std::mutex> lg(m_state);
-        predict(imu_msg);
+        predict(imu_msg);//IMU预积分，计算位置、速度、四元数旋转的传播过程
         std_msgs::Header header = imu_msg->header;
         header.frame_id = "world";
         if (estimator.solver_flag == Estimator::SolverFlag::NON_LINEAR)
-            pubLatestOdometry(tmp_P, tmp_Q, tmp_V, header);
+            pubLatestOdometry(tmp_P, tmp_Q, tmp_V, header);//发布IMU传播的里程计
     }
 }
-
+//转换成图片格式
 void raw_image_callback(const sensor_msgs::ImageConstPtr &img_msg)
 {
     cv_bridge::CvImagePtr img_ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
@@ -438,38 +443,38 @@ void process_pose_graph()
 // thread: visual-inertial odometry
 void process()
 {
-    while (true)
-    {
+//    while (true)
+//    {
         std::vector<std::pair<std::vector<sensor_msgs::ImuConstPtr>, sensor_msgs::PointCloudConstPtr>> measurements;
         std::unique_lock<std::mutex> lk(m_buf);
         con.wait(lk, [&]
-                 {
-            return (measurements = getMeasurements()).size() != 0;
-                 });
+        {
+            return (measurements = getMeasurements()).size() != 0; //当IMU和点云队列不为空时，保存信息
+        });
         lk.unlock();
 
         for (auto &measurement : measurements)
         {
             for (auto &imu_msg : measurement.first)
-                send_imu(imu_msg);
+                send_imu(imu_msg);//实现公式（1），计算其位置、速度和旋转矩阵
 
             auto img_msg = measurement.second;
             ROS_DEBUG("processing vision data with stamp %f \n", img_msg->header.stamp.toSec());
 
             TicToc t_s;
-            map<int, vector<pair<int, Vector3d>>> image;
+            map <int,vector<pair<int,Vector3d>>> image;///刚才变红了不知道时遇到了什么问题
             for (unsigned int i = 0; i < img_msg->points.size(); i++)
             {
-                int v = img_msg->channels[0].values[i] + 0.5;
-                int feature_id = v / NUM_OF_CAM;
-                int camera_id = v % NUM_OF_CAM;
-                double x = img_msg->points[i].x;
+                int v = img_msg->channels[0].values[i] + 0.5;//特征点ID，+0.5 应该可以省略把？
+                int feature_id = v / NUM_OF_CAM;//特征点的id，与定义时相对应。
+                int camera_id = v % NUM_OF_CAM;//若是双目，值为0-1，单目的话值恒为0
+                double x = img_msg->points[i].x;//归一化坐标
                 double y = img_msg->points[i].y;
                 double z = img_msg->points[i].z;
                 ROS_ASSERT(z == 1);
-                image[feature_id].emplace_back(camera_id, Vector3d(x, y, z));
+                image[feature_id].emplace_back(camera_id, Vector3d(x, y, z));  //保存点云，image[i]表示第i个特征
             }
-            estimator.processImage(image, img_msg->header);
+            estimator.processImage(image, img_msg->header);///----------*-*-*-*-*-*-*************************------------最主要的部分
             /**
             *** start build keyframe database for loop closure
             **/
@@ -496,7 +501,7 @@ void process()
                 m_retrive_data_buf.unlock();
                 //WINDOW_SIZE - 2 is key frame
                 if(estimator.marginalization_flag == 0 && estimator.solver_flag == estimator.NON_LINEAR)
-                {   
+                {
                     Vector3d vio_T_w_i = estimator.Ps[WINDOW_SIZE - 2];
                     Matrix3d vio_R_w_i = estimator.Rs[WINDOW_SIZE - 2];
                     i_buf.lock();
@@ -509,7 +514,7 @@ void process()
                     // relative_T   i-1_T_i relative_R  i-1_R_i
                     cv::Mat KeyFrame_image;
                     KeyFrame_image = image_buf.front().first;
-                    
+
                     const char *pattern_file = PATTERN_FILE.c_str();
                     Vector3d cur_T;
                     Matrix3d cur_R;
@@ -526,16 +531,16 @@ void process()
                     {
                         if(estimator.Headers[0].stamp.toSec() == estimator.retrive_data_vector[0].header)
                         {
-                            KeyFrame* cur_kf = keyframe_database.getKeyframe(estimator.retrive_data_vector[0].cur_index);                            
+                            KeyFrame* cur_kf = keyframe_database.getKeyframe(estimator.retrive_data_vector[0].cur_index);
                             if (abs(estimator.retrive_data_vector[0].relative_yaw) > 30.0 || estimator.retrive_data_vector[0].relative_t.norm() > 20.0)
                             {
                                 ROS_DEBUG("Wrong loop");
                                 cur_kf->removeLoop();
                             }
-                            else 
+                            else
                             {
-                                cur_kf->updateLoopConnection( estimator.retrive_data_vector[0].relative_t, 
-                                                              estimator.retrive_data_vector[0].relative_q, 
+                                cur_kf->updateLoopConnection( estimator.retrive_data_vector[0].relative_t,
+                                                              estimator.retrive_data_vector[0].relative_q,
                                                               estimator.retrive_data_vector[0].relative_yaw);
                                 m_posegraph_buf.lock();
                                 optimize_posegraph_buf.push(estimator.retrive_data_vector[0].cur_index);
@@ -570,7 +575,7 @@ void process()
             update();
         m_state.unlock();
         m_buf.unlock();
-    }
+//    }
 }
 
 int main(int argc, char **argv)
@@ -584,12 +589,12 @@ int main(int argc, char **argv)
     ROS_DEBUG("EIGEN_DONT_PARALLELIZE");
 #endif
     ROS_WARN("waiting for image and imu...");
-
+    //定义了很多发布器
     registerPub(n);
-
-    ros::Subscriber sub_imu = n.subscribe(IMU_TOPIC, 2000, imu_callback, ros::TransportHints().tcpNoDelay());
-    ros::Subscriber sub_image = n.subscribe("/feature_tracker/feature", 2000, feature_callback);
-    ros::Subscriber sub_raw_image = n.subscribe(IMAGE_TOPIC, 2000, raw_image_callback);
+    //定义订阅器
+    ros::Subscriber sub_imu = n.subscribe(IMU_TOPIC, 2000, imu_callback, ros::TransportHints().tcpNoDelay());//订阅imu信息
+    ros::Subscriber sub_image = n.subscribe("/feature_tracker/feature", 2000, feature_callback);//从feature_tracker节点订阅feature信息
+    ros::Subscriber sub_raw_image = n.subscribe(IMAGE_TOPIC, 2000, raw_image_callback);//，订阅image信息，且回调函数将msg转化为图片格式
 
     std::thread measurement_process{process};
     std::thread loop_detection, pose_graph;

@@ -361,7 +361,7 @@ PinholeCamera::estimateIntrinsics(const cv::Size& boardSize,
     params.cy() = cy;
 
     size_t nImages = imagePoints.size();
-
+    std::cout<<"nImages = imagePoints.size()="<<nImages<<std::endl;
     cv::Mat A(nImages * 2, 2, CV_64F);
     cv::Mat b(nImages * 2, 1, CV_64F);
 

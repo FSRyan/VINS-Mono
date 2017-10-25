@@ -23,7 +23,7 @@ class FeaturePerFrame
         z = _point(2);
         point = _point / z;
     }
-    Vector3d point;
+    Vector3d point;           //归一化z=1坐标
     double z;
     bool is_used;
     double parallax;
@@ -37,7 +37,7 @@ class FeaturePerId
   public:
     const int feature_id;
     int start_frame;
-    vector<FeaturePerFrame> feature_per_frame;
+    vector<FeaturePerFrame> feature_per_frame; //很多的归一化坐标点的容器
 
     int used_num;
     bool is_outlier;

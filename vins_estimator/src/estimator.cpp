@@ -86,32 +86,34 @@ void Estimator::processIMU(double dt, const Vector3d &linear_acceleration, const
     {
         pre_integrations[frame_count]->push_back(dt, linear_acceleration, angular_velocity);
         //if(solver_flag != NON_LINEAR)
-            tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);
+        tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);
 
         dt_buf[frame_count].push_back(dt);
         linear_acceleration_buf[frame_count].push_back(linear_acceleration);
         angular_velocity_buf[frame_count].push_back(angular_velocity);
 
         int j = frame_count;         
-        Vector3d un_acc_0 = Rs[j] * (acc_0 - Bas[j]) - g;
-        Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - Bgs[j];
-        Rs[j] *= Utility::deltaQ(un_gyr * dt).toRotationMatrix();
-        Vector3d un_acc_1 = Rs[j] * (linear_acceleration - Bas[j]) - g;
-        Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-        Ps[j] += dt * Vs[j] + 0.5 * dt * dt * un_acc;
-        Vs[j] += dt * un_acc;
+        Vector3d un_acc_0 = Rs[j] * (acc_0 - Bas[j]) - g;                   //-----------------------------------
+        Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - Bgs[j];        //中值离散积分方法计算dt内平均角速度    |
+                                                                            //                                  |----->un_acc,dt内平均线速度，此部分对应公式（1）
+        Rs[j] *= Utility::deltaQ(un_gyr * dt).toRotationMatrix();           //theta->Q->R,Rs的坐标系为世界坐标系   |
+        Vector3d un_acc_1 = Rs[j] * (linear_acceleration - Bas[j]) - g;     //-----------------------------------
+        Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);                      //中值离散积分方法计算dt内平均加速度
+        Ps[j] += dt * Vs[j] + 0.5 * dt * dt * un_acc;                       //P=P0+v*t+1/2*a*t*t
+        Vs[j] += dt * un_acc;                                               //V=v0+a*t
     }
     acc_0 = linear_acceleration;
     gyr_0 = angular_velocity;
 }
-
+//输入为image, img_msg->header
 void Estimator::processImage(const map<int, vector<pair<int, Vector3d>>> &image, const std_msgs::Header &header)
 {
     ROS_DEBUG("new image coming ------------------------------------------");
     ROS_DEBUG("Adding feature points %lu", image.size());
-    if (f_manager.addFeatureCheckParallax(frame_count, image))
-        marginalization_flag = MARGIN_OLD;
-    else
+    ///边缘化筛选关键帧，降低计算复杂度
+    if (f_manager.addFeatureCheckParallax(frame_count, image))   //没有补偿视差
+        marginalization_flag = MARGIN_OLD;    ///边缘化变量
+    else                                                        //存在补偿视差
         marginalization_flag = MARGIN_SECOND_NEW;
 
     ROS_DEBUG("this frame is--------------------%s", marginalization_flag ? "reject" : "accept");
@@ -130,9 +132,10 @@ void Estimator::processImage(const map<int, vector<pair<int, Vector3d>>> &image,
         ROS_INFO("calibrating extrinsic param, rotation movement is needed");
         if (frame_count != 0)
         {
+            //前后两张图片作为双目的两张图片，corres为3D点与3D点之间的匹配关系
             vector<pair<Vector3d, Vector3d>> corres = f_manager.getCorresponding(frame_count - 1, frame_count);
             Matrix3d calib_ric;
-            if (initial_ex_rotation.CalibrationExRotation(corres, pre_integrations[frame_count]->delta_q, calib_ric))
+            if (initial_ex_rotation.CalibrationExRotation(corres, pre_integrations[frame_count]->delta_q, calib_ric))  //计算外参矩阵：calib_ric
             {
                 ROS_WARN("initial extrinsic rotation calib success");
                 ROS_WARN_STREAM("initial extrinsic rotation: " << endl << calib_ric);
@@ -150,7 +153,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Vector3d>>> &image,
             bool result = false;
             if( ESTIMATE_EXTRINSIC != 2 && (header.stamp.toSec() - initial_timestamp) > 0.1)
             {
-               result = initialStructure();
+               result = initialStructure();//structure from motion,恢复初始结构,跟ORB-SLAM该部分相同
                initial_timestamp = header.stamp.toSec();
             }
             if(result)
@@ -256,12 +259,20 @@ bool Estimator::initialStructure()
     Matrix3d relative_R;
     Vector3d relative_T;
     int l;
-    if (!relativePose(relative_R, relative_T, l))
+    //在window中找到有与之对应的帧且有足够视差
+    //relativePose计算基础矩阵，再求出R，t
+    if (!relativePose(relative_R, relative_T, l))//在window中找到有与之对应的帧且有足够视差
     {
         ROS_INFO("Not enough features or parallax; Move device around");
         return false;
     }
     GlobalSFM sfm;
+     /*
+     * 1.通过匹配点+pnp估计相机位姿
+     * 2.triangulate point based on the solve pnp result
+     * 3.BA
+      * (PNP和三角化交替进行)
+     */
     if(!sfm.construct(frame_count + 1, Q, T, l,
               relative_R, relative_T,
               sfm_f, sfm_tracked_points))
@@ -355,6 +366,7 @@ bool Estimator::visualInitialAlign()
 {
     TicToc t_g;
     VectorXd x;
+    //solveGyroscopeBias
     //solve scale
     bool result = VisualIMUAlignment(all_image_frame, Bgs, g, x);
     if(!result)
@@ -636,7 +648,7 @@ bool Estimator::failureDetection()
     return false;
 }
 
-
+///--------------------------------------------------------------------------------------------------------------10.18日晚
 void Estimator::optimization()
 {
     ceres::Problem problem;
@@ -811,7 +823,7 @@ void Estimator::optimization()
     }
 
     double2vector();
-
+///------------------------------------------------------------------------------------------------------------边缘化过程
     TicToc t_whole_marginalization;
     if (marginalization_flag == MARGIN_OLD)
     {

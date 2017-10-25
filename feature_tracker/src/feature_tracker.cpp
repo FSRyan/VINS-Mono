@@ -5,11 +5,11 @@ int FeatureTracker::n_id = 0;
 bool inBorder(const cv::Point2f &pt)
 {
     const int BORDER_SIZE = 1;
-    int img_x = cvRound(pt.x);
+    int img_x = cvRound(pt.x);//cvRound对一个double型的数进行四舍五入
     int img_y = cvRound(pt.y);
     return BORDER_SIZE <= img_x && img_x < COL - BORDER_SIZE && BORDER_SIZE <= img_y && img_y < ROW - BORDER_SIZE;
 }
-
+//剔除空的向量
 void reduceVector(vector<cv::Point2f> &v, vector<uchar> status)
 {
     int j = 0;
@@ -82,11 +82,11 @@ void FeatureTracker::readImage(const cv::Mat &_img)
     cv::Mat img;
     TicToc t_r;
 
-    if (EQUALIZE)
+    if (EQUALIZE) //图像太亮或太暗，使用限制对比度的直方图均衡
     {
         cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(3.0, cv::Size(8, 8));
         TicToc t_c;
-        clahe->apply(_img, img);
+        clahe->apply(_img, img);//参数：(InputArray src, OutputArray dst)
         ROS_DEBUG("CLAHE costs: %fms", t_c.toc());
     }
     else
@@ -113,6 +113,7 @@ void FeatureTracker::readImage(const cv::Mat &_img)
         for (int i = 0; i < int(forw_pts.size()); i++)
             if (status[i] && !inBorder(forw_pts[i]))
                 status[i] = 0;
+        //剔除空的向量（外点）以节省空间
         reduceVector(prev_pts, status);
         reduceVector(cur_pts, status);
         reduceVector(forw_pts, status);
@@ -123,7 +124,7 @@ void FeatureTracker::readImage(const cv::Mat &_img)
 
     if (PUB_THIS_FRAME)
     {
-        rejectWithF();
+        rejectWithF();//利用基础矩阵去除外点,计算前后两帧之间的匹配关系
 
         for (auto &n : track_cnt)
             n++;
@@ -144,6 +145,10 @@ void FeatureTracker::readImage(const cv::Mat &_img)
                 cout << "mask type wrong " << endl;
             if (mask.size() != forw_img.size())
                 cout << "wrong size " << endl;
+            /*
+             * 特征点之间保证了最小距离30个像素，跟踪成功的特征点需要经过rotation-compensated旋转补偿的视差计算，
+             * 视差在30个像素以上的特征点才会去参与三角化和后续的优化，保证了所有的特征点质量都是比较高的，同时降低了计算量。
+             */
             cv::goodFeaturesToTrack(forw_img, n_pts, MAX_CNT - forw_pts.size(), 0.1, MIN_DIST, mask);
         }
         else
@@ -152,7 +157,7 @@ void FeatureTracker::readImage(const cv::Mat &_img)
 
         ROS_DEBUG("add feature begins");
         TicToc t_a;
-        addPoints();
+        addPoints();//把新追踪到的角点添加到forw_pts中
         ROS_DEBUG("selectFeature costs: %fms", t_a.toc());
 
         prev_img = forw_img;
@@ -161,7 +166,7 @@ void FeatureTracker::readImage(const cv::Mat &_img)
     cur_img = forw_img;
     cur_pts = forw_pts;
 }
-
+//利用基础矩阵去除外点
 void FeatureTracker::rejectWithF()
 {
     if (forw_pts.size() >= 8)
@@ -172,7 +177,7 @@ void FeatureTracker::rejectWithF()
         for (unsigned int i = 0; i < prev_pts.size(); i++)
         {
             Eigen::Vector3d tmp_p;
-            m_camera->liftProjective(Eigen::Vector2d(prev_pts[i].x, prev_pts[i].y), tmp_p);
+            m_camera->liftProjective(Eigen::Vector2d(prev_pts[i].x, prev_pts[i].y), tmp_p);//将点从图像平面提升到投影空间
             tmp_p.x() = FOCAL_LENGTH * tmp_p.x() / tmp_p.z() + COL / 2.0;
             tmp_p.y() = FOCAL_LENGTH * tmp_p.y() / tmp_p.z() + ROW / 2.0;
             un_prev_pts[i] = cv::Point2f(tmp_p.x(), tmp_p.y());
@@ -184,7 +189,7 @@ void FeatureTracker::rejectWithF()
         }
 
         vector<uchar> status;
-        cv::findFundamentalMat(un_prev_pts, un_forw_pts, cv::FM_RANSAC, F_THRESHOLD, 0.99, status);
+        cv::findFundamentalMat(un_prev_pts, un_forw_pts, cv::FM_RANSAC, F_THRESHOLD, 0.99, status);//从对应的2D点中计算基础矩阵，并用RANSAC算法去除外点
         int size_a = prev_pts.size();
         reduceVector(prev_pts, status);
         reduceVector(cur_pts, status);
@@ -207,7 +212,7 @@ bool FeatureTracker::updateID(unsigned int i)
     else
         return false;
 }
-
+//读取相机的内参
 void FeatureTracker::readIntrinsicParameter(const string &calib_file)
 {
     ROS_INFO("reading paramerter of camera %s", calib_file.c_str());
