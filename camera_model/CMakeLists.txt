@@ -13,11 +13,13 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Boost REQUIRED COMPONENTS filesystem program_options system)
 include_directories(${Boost_INCLUDE_DIRS})
 
-find_package(OpenCV REQUIRED)
+set(OpenCV_DIR /home/jh/opencv-3.2.0/build)
+find_package(OpenCV 3.2.0 REQUIRED)
 
 # set(EIGEN_INCLUDE_DIR "/usr/local/include/eigen3")
 find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
+message("12312 ${CERES_INCLUDE_DIRS}")
 
 
 catkin_package(

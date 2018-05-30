@@ -7,7 +7,7 @@
 #include "../utility/tic_toc.h"
 #include "../parameters.h"
 
-class ProjectionFactor : public ceres::SizedCostFunction<2, 7, 7, 7, 1>
+class ProjectionFactor : public ceres::SizedCostFunction<2, 7, 7, 7, 1>//残差、参数块的维度，那么<2,7><2,7><2,7><2,1>就是雅克比矩阵的维度
 {
   public:
     ProjectionFactor(const Eigen::Vector3d &_pts_i, const Eigen::Vector3d &_pts_j);

@@ -15,7 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
     cv_bridge
     camera_model
     )
-
+set(OpenCV_DIR /home/jh/opencv-3.2.0/build)
 find_package(OpenCV REQUIRED)
 
 find_package(Ceres REQUIRED)

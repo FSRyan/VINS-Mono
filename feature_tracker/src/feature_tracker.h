@@ -48,11 +48,11 @@ class FeatureTracker
 
     cv::Mat mask;
     cv::Mat fisheye_mask;
-    cv::Mat prev_img, cur_img, forw_img;//先前、当前、前边、的图像
+    cv::Mat prev_img, cur_img, forw_img;
     vector<cv::Point2f> n_pts;
-    vector<cv::Point2f> prev_pts, cur_pts, forw_pts;//先前、当前、前边、的点
-    vector<int> ids;//匹配点的ID
-    vector<int> track_cnt;//跟踪的匹配点
+    vector<cv::Point2f> prev_pts, cur_pts, forw_pts;
+    vector<int> ids;
+    vector<int> track_cnt;
     camodocal::CameraPtr m_camera;
 
     static int n_id;

@@ -173,6 +173,9 @@ class IntegrationBase
         Eigen::Vector3d dba = Bai - linearized_ba;
         Eigen::Vector3d dbg = Bgi - linearized_bg;
 
+        std::cout<<"linearized_ba"<<Bai - linearized_ba<<std::endl;
+        std::cout<<"linearized_bg"<<Bgi - linearized_bg<<std::endl;
+
         Eigen::Quaterniond corrected_delta_q = delta_q * Utility::deltaQ(dq_dbg * dbg);
         Eigen::Vector3d corrected_delta_v = delta_v + dv_dba * dba + dv_dbg * dbg;
         Eigen::Vector3d corrected_delta_p = delta_p + dp_dba * dba + dp_dbg * dbg;

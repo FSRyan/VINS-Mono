@@ -16,7 +16,8 @@ find_package(catkin REQUIRED COMPONENTS
   message_filters
   camera_model
 )
-find_package(OpenCV REQUIRED)
+set(OpenCV_DIR /home/jh/opencv-3.2.0/build)
+find_package(OpenCV 3.2.0 REQUIRED)
 
 catkin_package(
 

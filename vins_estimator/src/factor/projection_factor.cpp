@@ -31,7 +31,7 @@ bool ProjectionFactor::Evaluate(double const *const *parameters, double *residua
     Eigen::Quaterniond qic(parameters[2][6], parameters[2][3], parameters[2][4], parameters[2][5]);
 
     double inv_dep_i = parameters[3][0];
-
+//    std::cout<<"pts_i:"<<pts_i<<std::endl;
     Eigen::Vector3d pts_camera_i = pts_i / inv_dep_i;
     Eigen::Vector3d pts_imu_i = qic * pts_camera_i + tic;
     Eigen::Vector3d pts_w = Qi * pts_imu_i + Pi;
@@ -39,8 +39,10 @@ bool ProjectionFactor::Evaluate(double const *const *parameters, double *residua
     Eigen::Vector3d pts_camera_j = qic.inverse() * (pts_imu_j - tic);
     Eigen::Map<Eigen::Vector2d> residual(residuals);
 
+//    std::cout<<"pts_camera_j:"<<pts_camera_j<<std::endl;
+//    std::cout<<"pts_j:"<<pts_j<<std::endl;
 #ifdef UNIT_SPHERE_ERROR 
-    residual =  tangent_base * (pts_camera_j.normalized() - pts_j.normalized());
+    residual =  tangent_base * (pts_camera_j.normalized() - pts_j.normalized());//与论文中相差一个负号
 #else
     double dep_j = pts_camera_j.z();
     residual = (pts_camera_j / dep_j).head<2>() - pts_j.head<2>();
@@ -78,6 +80,16 @@ bool ProjectionFactor::Evaluate(double const *const *parameters, double *residua
             Eigen::Matrix<double, 3, 6> jaco_i;
             jaco_i.leftCols<3>() = ric.transpose() * Rj.transpose();
             jaco_i.rightCols<3>() = ric.transpose() * Rj.transpose() * Ri * -Utility::skewSymmetric(pts_imu_i);
+
+//            Eigen::Matrix <double, 3,4> temp;
+//            Eigen::Vector3d qv(Qi.x(),Qi.y(),Qi.z());
+//            temp.block<3,1>(0,0)=Qi.w()*pts_imu_i+qv.cross(pts_imu_i);
+//            double num=qv.transpose()*pts_imu_i;
+//
+//            temp.block<3,3>(0,1)=num*Eigen::Matrix3d::Identity()+qv*pts_imu_i.transpose()-pts_imu_i*qv.transpose()-Qi.w()*Utility::skewSymmetric(pts_imu_i);
+//
+//            std::cout<<"temp:"<<temp<<std::endl;
+//            std::cout<<"temp1:"<<Ri * -Utility::skewSymmetric(pts_imu_i)<<std::endl;
 
             jacobian_pose_i.leftCols<6>() = reduce * jaco_i;
             jacobian_pose_i.rightCols<1>().setZero();

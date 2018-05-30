@@ -21,10 +21,10 @@ struct ResidualBlockInfo
 
     ceres::CostFunction *cost_function;
     ceres::LossFunction *loss_function;
-    std::vector<double *> parameter_blocks;
-    std::vector<int> drop_set;
+    std::vector<double *> parameter_blocks;//这个残差中参数块数组，例如特征残差中，4 4 4 1，分别是残差块数组的大小
+    std::vector<int> drop_set;//需要去掉的参数块的id，0 1，就是第0 1 个参数块，0 3 就是第0 3 个参数块
 
-    double **raw_jacobians;
+    double **raw_jacobians;//
     std::vector<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> jacobians;
     Eigen::VectorXd residuals;
 
@@ -43,6 +43,7 @@ struct ThreadsStruct
     std::unordered_map<long, int> parameter_block_idx; //local size
 };
 
+//搞清楚这些是什么意思
 class MarginalizationInfo
 {
   public:
@@ -54,11 +55,11 @@ class MarginalizationInfo
     void marginalize();
     std::vector<double *> getParameterBlocks(std::unordered_map<long, double *> &addr_shift);
 
-    std::vector<ResidualBlockInfo *> factors;
-    int m, n;
-    std::unordered_map<long, int> parameter_block_size; //global size
+    std::vector<ResidualBlockInfo *> factors;//残差块信息
+    int m, n;//m比n大，感觉不太科学啊
+    std::unordered_map<long, int> parameter_block_size; //global size  <所有参数块地址，参数块大小>，所有的参数
     int sum_block_size;
-    std::unordered_map<long, int> parameter_block_idx; //local size
+    std::unordered_map<long, int> parameter_block_idx; //local size  <所有参数块的地址，在矩阵中起始的位置> 设置这个变量的作用就是在添加的时候能分清楚先添加那些变量...以便构造A b矩阵
     std::unordered_map<long, double *> parameter_block_data;
 
     std::vector<int> keep_block_size; //global size

@@ -41,28 +41,28 @@ int FeatureManager::getFeatureCount()
     return cnt;
 }
 
-//添加特征，检查视差
+
 bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vector<pair<int, Vector3d>>> &image)
 {
-    ROS_DEBUG("input feature: %d", (int)image.size());//本图像中的特征点数目
-    ROS_DEBUG("num of feature: %d", getFeatureCount());//slidewindow中所有的特征的数目？
+    ROS_DEBUG("input feature: %d", (int)image.size());
+    ROS_DEBUG("num of feature: %d", getFeatureCount());
     double parallax_sum = 0;
     int parallax_num = 0;
-    last_track_num = 0; //在本幅图像中已经处于跟踪状态的特征的数目
-    for (auto &id_pts : image) //将id_pts指向image，检查每一个特征点是不是处于track状态
+    last_track_num = 0;
+    for (auto &id_pts : image)
     {
-        FeaturePerFrame f_per_fra(id_pts.second[0].second);//<int,Vectoy3d>类型数据
+        FeaturePerFrame f_per_fra(id_pts.second[0].second);
 
-        int feature_id = id_pts.first; //特征点id
+        int feature_id = id_pts.first;
         auto it = find_if(feature.begin(), feature.end(), [feature_id](const FeaturePerId &it)
                           {
             return it.feature_id == feature_id;
                           });
 
-        if (it == feature.end())   //如果没找到，添加进去
+        if (it == feature.end())
         {
-            feature.push_back(FeaturePerId(feature_id, frame_count));//在该图像中特征的ID 以及首次观测到该特征的帧的ID
-            feature.back().feature_per_frame.push_back(f_per_fra);// feature类型是：list<FeaturePerId>，这里添加最后一个FeaturePerId的feature_per_frame为f_per_fra
+            feature.push_back(FeaturePerId(feature_id, frame_count));
+            feature.back().feature_per_frame.push_back(f_per_fra);
         }
         else if (it->feature_id == feature_id)
         {
@@ -71,13 +71,13 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         }
     }
 
-    if (frame_count < 2 || last_track_num < 20)//帧数太少或者跟踪特征点太少
+    if (frame_count < 2 || last_track_num < 20)
         return true;
 
     for (auto &it_per_id : feature)
     {
-        if (it_per_id.start_frame <= frame_count - 2 &&  //该特征刚开始跟踪
-            it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)///这个不懂
+        if (it_per_id.start_frame <= frame_count - 2 &&
+            it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)
         {
             parallax_sum += compensatedParallax2(it_per_id, frame_count);
             parallax_num++;
@@ -343,13 +343,15 @@ void FeatureManager::removeFront(int frame_count)
         else
         {
             int j = WINDOW_SIZE - 1 - it->start_frame;
+            if (it->endFrame() < frame_count - 1)
+                continue;
             it->feature_per_frame.erase(it->feature_per_frame.begin() + j);
             if (it->feature_per_frame.size() == 0)
                 feature.erase(it);
         }
     }
 }
-//补偿视差计算
+
 double FeatureManager::compensatedParallax2(const FeaturePerId &it_per_id, int frame_count)
 {
     //check the second last frame is keyframe or not

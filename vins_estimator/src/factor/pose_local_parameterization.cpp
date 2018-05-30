@@ -2,7 +2,7 @@
 
 bool PoseLocalParameterization::Plus(const double *x, const double *delta, double *x_plus_delta) const
 {
-    Eigen::Map<const Eigen::Vector3d> _p(x);
+    Eigen::Map<const Eigen::Vector3d> _p(x);//用指针构造Eigen里的类
     Eigen::Map<const Eigen::Quaterniond> _q(x + 3);
 
     Eigen::Map<const Eigen::Vector3d> dp(delta);
